@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -33,7 +32,6 @@ type Metrics struct {
 	cacheMisses int64
 	apiCalls    int64
 	apiErrors   int64
-	mu          sync.RWMutex // For thread-safe updates
 }
 
 // BinancePrice represents the response from Binance API
@@ -64,9 +62,7 @@ func (s *Service) GetQuote(ctx context.Context, symbolPair config.SymbolPair) (*
 	cachedPrice, err := s.redis.Get(ctx, cacheKey).Result()
 	if err == nil {
 		// Cache read
-		s.metrics.mu.Lock()
 		s.metrics.cacheReads++
-		s.metrics.mu.Unlock()
 		// Convert string price to float64
 		floatPrice, convErr := strconv.ParseFloat(cachedPrice, 64)
 		if convErr != nil {
@@ -75,16 +71,12 @@ func (s *Service) GetQuote(ctx context.Context, symbolPair config.SymbolPair) (*
 		return &config.Quote{SymbolPair: symbolPair, Price: floatPrice}, nil
 	}
 	// Cache miss
-	s.metrics.mu.Lock()
 	s.metrics.cacheMisses++
-	s.metrics.mu.Unlock()
 
 	quote, err := s.fetchPriceFromAPI(symbolPair)
 	if err != nil {
 		// API Error
-		s.metrics.mu.Lock()
 		s.metrics.apiErrors++
-		s.metrics.mu.Unlock()
 		return &config.Quote{}, fmt.Errorf("failed to fetch price from API: %w", err)
 	}
 
@@ -104,9 +96,7 @@ func (s *Service) cachePrice(ctx context.Context, key string, quote *config.Quot
 	priceStr := strconv.FormatFloat(quote.Price, 'f', -1, 64)
 	// Set the key in Redis
 	err := s.redis.Set(ctx, key, priceStr, s.cacheTTL).Err()
-	s.metrics.mu.Lock()
 	s.metrics.cacheWrites++
-	s.metrics.mu.Unlock()
 
 	return err
 }
@@ -145,9 +135,7 @@ func (s *Service) fetchPriceFromAPI(symbolPair config.SymbolPair) (*config.Quote
 
 	// Make the HTTP request
 	resp, err := s.client.Get(url)
-	s.metrics.mu.Lock()
 	s.metrics.apiCalls++
-	s.metrics.mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
@@ -176,9 +164,6 @@ func (s *Service) fetchPriceFromAPI(symbolPair config.SymbolPair) (*config.Quote
 
 // GetMetrics returns current metrics - useful for monitoring endpoint
 func (s *Service) GetMetrics() map[string]int64 {
-	s.metrics.mu.RLock()
-	defer s.metrics.mu.RUnlock()
-
 	return map[string]int64{
 		"cache_reads":  s.metrics.cacheReads,
 		"cache_writes": s.metrics.cacheWrites,
