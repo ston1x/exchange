@@ -46,7 +46,7 @@ func main() {
 	// Cron
 	scheduler, err := gocron.NewScheduler()
 	if err != nil {
-		log.Fatal("[cron-error] Failed to create scheduler: %v", err)
+		log.Fatal("[cron-error] Failed to create scheduler: ", err)
 	}
 	job, err := scheduler.NewJob(
 		gocron.DurationJob(time.Minute),
@@ -56,7 +56,7 @@ func main() {
 		}),
 	)
 	if err != nil {
-		log.Fatal("[cron-error] Failed to create job: %v", err)
+		log.Fatal("[cron-error] Failed to create job: ", err)
 	}
 	log.Printf("[cron-info] Job ID %v", job.ID())
 	scheduler.Start()
